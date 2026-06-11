@@ -23,41 +23,86 @@ namespace PureWADTool
             Console.WriteLine("   WipEout Pure WAD Decryptor & Extractor    ");
             Console.WriteLine("=============================================\n");
 
-            if (args.Length != 2)
+            if (args.Length < 2 || args.Length > 3 || (args.Length == 3 && args[0].ToLower() != "-batch"))
             {
                 Console.WriteLine("Usage: WipEoutWadTool.exe [ENCRYPTED_PI.WAD] [OUTPUT_DIRECTORY]");
+                Console.WriteLine("       WipEoutWadTool.exe -batch [DLC_DIRECTORY] [OUTPUT_DIRECTORY]");
                 Console.WriteLine("Ensure 'keys.txt' and 'filenames.txt' are in the executable directory.");
                 return;
             }
 
-            string sourceFile = args[0];
-            string outDir = args[1];
             string keysFile = "keys.txt";
             string filenamesFile = "filenames.txt";
 
-            if (!File.Exists(sourceFile) || !File.Exists(keysFile) || !File.Exists(filenamesFile))
+            if (!File.Exists(keysFile) || !File.Exists(filenamesFile))
             {
-                Console.WriteLine("Error: Missing required files (PI.WAD, keys.txt, or filenames.txt).");
+                Console.WriteLine("Error: Missing required files (keys.txt or filenames.txt).");
                 return;
             }
 
             //Initialize CRC32 table
             InitializeCrc32();
 
-            //Load keys & filenames
+            //Load keys & filenames once
             List<DlcKey> keys = ParseKeys(keysFile);
             Dictionary<uint, string> fileNamesMap = ParseFilenames(filenamesFile);
             Console.WriteLine($"Loaded {keys.Count} keys and {fileNamesMap.Count} known filenames.");
 
-            //Read & identify encrypted WAD
+            //Batch mode processing
+            if (args[0].ToLower() == "-batch")
+            {
+                string dlcDir = args[1];
+                string outDir = args[2];
+
+                if (!Directory.Exists(dlcDir))
+                {
+                    Console.WriteLine($"Error: DLC directory '{dlcDir}' does not exist.");
+                    return;
+                }
+
+                string[] wadFiles = Directory.GetFiles(dlcDir, "PI.WAD", SearchOption.AllDirectories);
+                Console.WriteLine($"Found {wadFiles.Length} PI.WAD files in '{dlcDir}'.\n");
+
+                foreach (string wadFile in wadFiles)
+                {
+                    //Extract the name of the parent folder (e.g. "UCES00001DA7MUSIC")
+                    string parentDirName = new DirectoryInfo(Path.GetDirectoryName(wadFile)).Name;
+                    string specificOutDir = Path.Combine(outDir, parentDirName);
+
+                    ProcessWad(wadFile, specificOutDir, keys, fileNamesMap);
+                }
+            }
+            //Single file processing
+            else
+            {
+                string sourceFile = args[0];
+                string outDir = args[1];
+
+                if (!File.Exists(sourceFile))
+                {
+                    Console.WriteLine($"Error: WAD file '{sourceFile}' does not exist.");
+                    return;
+                }
+
+                ProcessWad(sourceFile, outDir, keys, fileNamesMap);
+            }
+        }
+
+        static void ProcessWad(string sourceFile, string outDir, List<DlcKey> keys, Dictionary<uint, string> fileNamesMap)
+        {
+            Console.WriteLine($"\n=============================================");
+            Console.WriteLine($"Processing: {sourceFile}");
+
             byte[] wadBytes = File.ReadAllBytes(sourceFile);
             uint initialVersion = BitConverter.ToUInt32(wadBytes, 0);
+
             if (initialVersion == 1)
             {
-                Console.WriteLine("\nDetected an unencrypted WAD file. Skipping decryption phase...");
+                Console.WriteLine("Detected an unencrypted WAD file. Skipping decryption phase...");
                 ExtractWad(wadBytes, outDir, fileNamesMap);
                 return;
             }
+
             DlcKey matchedKey = null;
             byte[] tryBytes = new byte[8];
 
@@ -79,7 +124,7 @@ namespace PureWADTool
                 return;
             }
 
-            Console.WriteLine($"\nDetected Pack: {matchedKey.Name.Substring(10)} (Region: {matchedKey.Name[2]})");
+            Console.WriteLine($"Detected Pack: {matchedKey.Name.Substring(10)} (Region: {matchedKey.Name[2]})");
             int payloadLength = wadBytes.Length - SIG_SIZE;
             Console.WriteLine($"Decrypting WAD payload... ({payloadLength} bytes)");
 
@@ -104,9 +149,7 @@ namespace PureWADTool
                     return;
                 }
 
-                Console.WriteLine($"\nWAD contains {nfiles} files. Extracting to '{outDir}'...\n");
-                Console.WriteLine("OFFSET    NAMEHASH  METHOD  ORIG-SIZE -> COMP-SIZE  RATIO  FILENAME");
-                Console.WriteLine("========  ========  ======  =========    =========  =====  ========");
+                Console.WriteLine($"WAD contains {nfiles} files. Extracting to '{outDir}'...");
 
                 Directory.CreateDirectory(outDir);
                 int knownCount = 0;
@@ -150,17 +193,13 @@ namespace PureWADTool
 
                     if (!filename.Contains("unknown")) knownCount++;
 
-                    //Console output
-                    string ratio = mode != "stored" ? $"{100.0 * compressedLength / actualUncompressedLen,3:F0}%" : " ---";
-                    Console.WriteLine($"{offset:x8}  {nameHash:x8}  {mode,-6}  {actualUncompressedLen,8}     {compressedLength,8}   {ratio}  {filename}");
-
                     //Save to disk
                     string fullPath = Path.Combine(outDir, filename.Replace('/', Path.DirectorySeparatorChar));
                     Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
                     File.WriteAllBytes(fullPath, uncompressedData);
                 }
 
-                Console.WriteLine($"\nExtraction Complete! {knownCount}/{nfiles} filenames resolved.");
+                Console.WriteLine($"Extraction Complete! {knownCount}/{nfiles} filenames resolved.");
             }
         }
 

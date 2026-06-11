@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "PureWADTool": {
+      "commandName": "Project",
+      "commandLineArgs": "-batch \"C:\\Users\\matej\\Downloads\\DLC\" decrypted"
+    }
+  }
+}
