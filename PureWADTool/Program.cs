@@ -149,7 +149,9 @@ namespace PureWADTool
                     return;
                 }
 
-                Console.WriteLine($"WAD contains {nfiles} files. Extracting to '{outDir}'...");
+                Console.WriteLine($"WAD contains {nfiles} files. Extracting to '{outDir}'...\n");
+                Console.WriteLine("OFFSET    NAMEHASH  METHOD  ORIG-SIZE -> COMP-SIZE  RATIO  FILENAME");
+                Console.WriteLine("========  ========  ======  =========    =========  =====  ========");
 
                 Directory.CreateDirectory(outDir);
                 int knownCount = 0;
@@ -193,13 +195,17 @@ namespace PureWADTool
 
                     if (!filename.Contains("unknown")) knownCount++;
 
+                    //Console output
+                    string ratio = mode != "stored" ? $"{100.0 * compressedLength / actualUncompressedLen,3:F0}%" : " ---";
+                    Console.WriteLine($"{offset:x8}  {nameHash:x8}  {mode,-6}  {actualUncompressedLen,8}     {compressedLength,8}   {ratio}  {filename}");
+
                     //Save to disk
                     string fullPath = Path.Combine(outDir, filename.Replace('/', Path.DirectorySeparatorChar));
                     Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
                     File.WriteAllBytes(fullPath, uncompressedData);
                 }
 
-                Console.WriteLine($"Extraction Complete! {knownCount}/{nfiles} filenames resolved.");
+                Console.WriteLine($"\nExtraction Complete! {knownCount}/{nfiles} filenames resolved.");
             }
         }
 
